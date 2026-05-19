@@ -16,10 +16,11 @@ env/
 
 # Environment variables
 .env
+.env.local
 
 # Vercel
 .vercel/
-vercel.json
+
 # IDE
 .vscode/
 .idea/
@@ -29,6 +30,3 @@ vercel.json
 # OS
 .DS_Store
 Thumbs.db
-
-migrations/
-tests/
