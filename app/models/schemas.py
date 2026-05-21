@@ -182,3 +182,7 @@ class ManualStartRequest(CamelModel):
 
 class ManualEndRequest(CamelModel):
     session_id: str
+
+
+class GateScanRequest(CamelModel):
+    gate_id: str

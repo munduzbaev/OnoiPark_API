@@ -6,7 +6,6 @@ JWT-signed one-shot token system:
   validate  → scanner (dashboard / tablet) calls this to let a car in or out
 """
 
-import asyncio
 from datetime import datetime, timezone, timedelta
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
@@ -15,6 +14,7 @@ from jose import jwt, JWTError, ExpiredSignatureError
 from app.config import settings
 from app.deps import current_user, current_admin
 from app.models.schemas import ValidateQRRequest
+from app.services.parking import finalize_completed
 from app.supabase_client import supabase
 
 router = APIRouter(prefix="/qr", tags=["qr"])
@@ -67,17 +67,6 @@ async def generate_qr(user: dict = Depends(current_user)):
         "token": token,
         "expiresAt": expires_at.isoformat(),
     }
-
-
-async def _finalize_session_completed(session_id: str):
-    """Background: mark session 'completed' after 5-second gate-open window."""
-    await asyncio.sleep(5)
-    try:
-        supabase.table("parking_sessions").update(
-            {"status": "completed"}
-        ).eq("id", session_id).execute()
-    except Exception:
-        pass
 
 
 @router.post("/validate")
@@ -243,7 +232,7 @@ async def validate_qr(
             raise HTTPException(status_code=500, detail=str(e))
 
         # Finalize to 'completed' after 5-second gate-open window
-        background_tasks.add_task(_finalize_session_completed, str(s["id"]))
+        background_tasks.add_task(finalize_completed, str(s["id"]))
 
         return {
             "action": "exit",

@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.deps import current_user, current_admin
 from app.models.schemas import UpdateSettingsRequest
-from app.routers import auth, parkings, sessions, bookings, qr, admin
+from app.routers import auth, parkings, sessions, bookings, qr, admin, gate
 from app.supabase_client import supabase
 
 app = FastAPI(
@@ -38,6 +38,7 @@ app.include_router(sessions.router, prefix=api_prefix)
 app.include_router(bookings.router, prefix=api_prefix)
 app.include_router(qr.router, prefix=api_prefix)
 app.include_router(admin.router, prefix=api_prefix)
+app.include_router(gate.router, prefix=api_prefix)
 
 
 # ---- Health ----
@@ -209,6 +210,7 @@ app.include_router(sessions.router)
 app.include_router(bookings.router)
 app.include_router(qr.router)
 app.include_router(admin.router)
+app.include_router(gate.router)
 
 
 @app.get("/health")
