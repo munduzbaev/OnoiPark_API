@@ -46,7 +46,7 @@ async def signup(body: SignupRequest):
     except Exception:
         pass  # profiles table may not exist on first run; let auth.create_user be the guard
 
-    email = f"{body.plate_number}@onoipark.app"
+    email = f"{body.plate_number.lower()}@onoipark.app"
 
     try:
         resp = supabase.auth.admin.create_user(
@@ -111,7 +111,7 @@ async def signin(body: SigninRequest):
     Sign in an existing user.
     Returns access_token and user profile.
     """
-    email = f"{body.plate_number}@onoipark.app"
+    email = f"{body.plate_number.lower()}@onoipark.app"
 
     try:
         resp = supabase.auth.sign_in_with_password(
@@ -212,7 +212,7 @@ async def reset_password(body: ResetPasswordRequest):
     Reset password (update phone number).
     Verifies old phone, then updates auth password and profiles.phone_number.
     """
-    email = f"{body.plate_number}@onoipark.app"
+    email = f"{body.plate_number.lower()}@onoipark.app"
 
     try:
         resp = supabase.auth.sign_in_with_password(
@@ -257,7 +257,7 @@ async def reset_password(body: ResetPasswordRequest):
 @router.post("/verify-user")
 async def verify_user(body: SigninRequest):
     """Verify a user exists with given plate + phone. Used by mobile app password reset flow."""
-    email = f"{body.plate_number}@onoipark.app"
+    email = f"{body.plate_number.lower()}@onoipark.app"
     try:
         resp = supabase.auth.sign_in_with_password(
             {"email": email, "password": body.phone_number}
