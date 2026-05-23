@@ -56,52 +56,66 @@ async def admin_history(
     plate_number: str | None = Query(None, alias="plateNumber"),
     from_date: str | None = Query(None, alias="fromDate"),
     to_date: str | None = Query(None, alias="toDate"),
-    limit: int = Query(50),
+    limit: int = Query(500),
     offset: int = Query(0),
 ):
-    """Return completed sessions with optional plate / date-range filters."""
+    """Return completed sessions for all users, enriched with driver profile."""
     try:
         q = (
             supabase.table("parking_sessions")
-            .select("*, profiles!parking_sessions_user_id_fkey(plate_number, name), parkings(name)")
+            .select("*")
             .eq("status", "completed")
         )
-
         if from_date:
             q = q.gte("exited_at", from_date)
         if to_date:
             q = q.lte("exited_at", to_date)
-
         q = q.order("exited_at", desc=True).range(offset, offset + limit - 1)
         sr = q.execute()
-    except Exception:
-        # Fallback query without joins if FK alias fails
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    sessions_raw = sr.data or []
+
+    # Bulk-fetch profiles and parkings to avoid N+1 and fragile FK aliases
+    user_ids = list({s["user_id"] for s in sessions_raw if s.get("user_id")})
+    parking_ids = list({s["parking_id"] for s in sessions_raw if s.get("parking_id")})
+
+    profiles_map: dict = {}
+    if user_ids:
         try:
-            q2 = (
-                supabase.table("parking_sessions")
-                .select("*")
-                .eq("status", "completed")
+            pr = (
+                supabase.table("profiles")
+                .select("id, plate_number, name")
+                .in_("id", user_ids)
+                .execute()
             )
-            if from_date:
-                q2 = q2.gte("exited_at", from_date)
-            if to_date:
-                q2 = q2.lte("exited_at", to_date)
-            q2 = q2.order("exited_at", desc=True).range(offset, offset + limit - 1)
-            sr = q2.execute()
-        except Exception as e2:
-            raise HTTPException(status_code=500, detail=str(e2))
+            profiles_map = {p["id"]: p for p in (pr.data or [])}
+        except Exception:
+            pass
+
+    parkings_map: dict = {}
+    if parking_ids:
+        try:
+            pkr = (
+                supabase.table("parkings")
+                .select("id, name")
+                .in_("id", parking_ids)
+                .execute()
+            )
+            parkings_map = {p["id"]: p["name"] for p in (pkr.data or [])}
+        except Exception:
+            pass
 
     history = []
-    for s in (sr.data or []):
-        # plate_number filter (applied in Python if join failed)
-        profile_data = s.get("profiles") or {}
-        plate = profile_data.get("plate_number", "") if isinstance(profile_data, dict) else ""
+    for s in sessions_raw:
+        profile = profiles_map.get(s.get("user_id") or "", {})
+        plate = profile.get("plate_number", "")
+
         if plate_number and plate and plate_number.lower() not in plate.lower():
             continue
 
-        parking_data = s.get("parkings") or {}
-        parking_name = parking_data.get("name", s.get("parking_id", "")) if isinstance(parking_data, dict) else s.get("parking_id", "")
-
+        parking_name = parkings_map.get(s.get("parking_id") or "", s.get("parking_id", ""))
         entered = s.get("entered_at") or s.get("created_at", "")
         exited = s.get("exited_at", "")
         duration = 0.0
