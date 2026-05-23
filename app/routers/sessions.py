@@ -103,7 +103,7 @@ async def get_active_session(user: dict = Depends(current_user)):
 
 @router.get("/all")
 async def get_all_sessions(user: dict = Depends(current_admin)):
-    """Admin/scanner only — return all currently active sessions."""
+    """Admin/scanner only — return all currently active sessions, enriched with driver profile."""
     try:
         sr = (
             supabase.table("parking_sessions")
@@ -115,7 +115,48 @@ async def get_all_sessions(user: dict = Depends(current_admin)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return [_session_to_dict(s) for s in (sr.data or [])]
+    sessions_raw = sr.data or []
+
+    # Bulk-fetch profiles and parkings to avoid N+1 queries
+    user_ids = list({s["user_id"] for s in sessions_raw if s.get("user_id")})
+    parking_ids = list({s["parking_id"] for s in sessions_raw if s.get("parking_id")})
+
+    profiles_map: dict = {}
+    if user_ids:
+        try:
+            pr = (
+                supabase.table("profiles")
+                .select("id, plate_number, name")
+                .in_("id", user_ids)
+                .execute()
+            )
+            profiles_map = {p["id"]: p for p in (pr.data or [])}
+        except Exception:
+            pass
+
+    parkings_map: dict = {}
+    if parking_ids:
+        try:
+            pkr = (
+                supabase.table("parkings")
+                .select("id, name")
+                .in_("id", parking_ids)
+                .execute()
+            )
+            parkings_map = {p["id"]: p["name"] for p in (pkr.data or [])}
+        except Exception:
+            pass
+
+    result = []
+    for s in sessions_raw:
+        profile = profiles_map.get(s.get("user_id") or "", {})
+        session = _session_to_dict(s)
+        session["plateNumber"] = profile.get("plate_number") or None
+        session["driverName"] = profile.get("name") or None
+        session["parkingName"] = parkings_map.get(s.get("parking_id") or "", s.get("parking_id", ""))
+        result.append(session)
+
+    return result
 
 
 @router.post("/start")
