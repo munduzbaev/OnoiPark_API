@@ -22,7 +22,7 @@ def _compute_cost(entered_at: str, price_per_hour: float, free_minutes: int) -> 
 
 @router.get("/sessions/all")
 async def admin_all_sessions(user: dict = Depends(current_admin)):
-    """Return all active sessions (waiting / active / exiting)."""
+    """Return all active sessions (waiting / active / exiting), enriched with driver profile."""
     try:
         sr = (
             supabase.table("parking_sessions")
@@ -34,13 +34,49 @@ async def admin_all_sessions(user: dict = Depends(current_admin)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+    sessions_raw = sr.data or []
+
+    # Bulk-fetch profiles and parkings — single query each, no N+1
+    user_ids = list({s["user_id"] for s in sessions_raw if s.get("user_id")})
+    parking_ids = list({s["parking_id"] for s in sessions_raw if s.get("parking_id")})
+
+    profiles_map: dict = {}
+    if user_ids:
+        try:
+            pr = (
+                supabase.table("profiles")
+                .select("id, plate_number, name")
+                .in_("id", user_ids)
+                .execute()
+            )
+            profiles_map = {p["id"]: p for p in (pr.data or [])}
+        except Exception:
+            pass
+
+    parkings_map: dict = {}
+    if parking_ids:
+        try:
+            pkr = (
+                supabase.table("parkings")
+                .select("id, name")
+                .in_("id", parking_ids)
+                .execute()
+            )
+            parkings_map = {p["id"]: p["name"] for p in (pkr.data or [])}
+        except Exception:
+            pass
+
     sessions = []
-    for s in (sr.data or []):
+    for s in sessions_raw:
+        profile = profiles_map.get(s.get("user_id") or "", {})
         sessions.append(
             {
                 "id": str(s["id"]),
                 "userId": str(s["user_id"]) if s.get("user_id") else None,
+                "plateNumber": profile.get("plate_number") or None,
+                "driverName": profile.get("name") or None,
                 "parkingId": s.get("parking_id"),
+                "parkingName": parkings_map.get(s.get("parking_id") or "", s.get("parking_id", "")),
                 "spotNumber": s.get("spot_number"),
                 "status": s["status"],
                 "enteredAt": s.get("entered_at"),
